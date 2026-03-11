@@ -22,9 +22,11 @@ detect_installation() {
 EXTENSION_DIRS=("qqbot" "openclaw-qq" "openclaw-qqbot")
 
 # 清理指定目录的函数
-cleanup_installation() {
-  local APP_NAME="$1"
-  local APP_DIR="$HOME/.$APP_NAME"
+# 参数: $1=base目录 $2=app名称
+cleanup_installation_at() {
+  local BASE_DIR="$1"
+  local APP_NAME="$2"
+  local APP_DIR="$BASE_DIR/.$APP_NAME"
   local CONFIG_FILE="$APP_DIR/$APP_NAME.json"
 
   echo ""
@@ -89,23 +91,34 @@ cleanup_installation() {
 # 检测并处理所有可能的安装
 FOUND_INSTALLATION=""
 
-# 检查 clawdbot
-if [ -d "$HOME/.clawdbot" ]; then
-  cleanup_installation "clawdbot"
-  FOUND_INSTALLATION="clawdbot"
-fi
+# 收集所有需要检查的基础目录（$HOME 和可能的其他路径，如 /projects）
+BASE_DIRS=("$HOME")
+# 如果 openclaw 的实际数据目录不在 $HOME 下（如 /projects/.openclaw），也要检查
+for extra_dir in "/projects" "/data" "/opt"; do
+  if [ "$extra_dir" != "$HOME" ] && [ -d "$extra_dir" ]; then
+    BASE_DIRS+=("$extra_dir")
+  fi
+done
 
-# 检查 openclaw
-if [ -d "$HOME/.openclaw" ]; then
-  cleanup_installation "openclaw"
-  FOUND_INSTALLATION="openclaw"
-fi
+for BASE in "${BASE_DIRS[@]}"; do
+  # 检查 clawdbot
+  if [ -d "$BASE/.clawdbot" ]; then
+    cleanup_installation_at "$BASE" "clawdbot"
+    FOUND_INSTALLATION="clawdbot"
+  fi
 
-# 检查 moltbot
-if [ -d "$HOME/.moltbot" ]; then
-  cleanup_installation "moltbot"
-  FOUND_INSTALLATION="moltbot"
-fi
+  # 检查 openclaw
+  if [ -d "$BASE/.openclaw" ]; then
+    cleanup_installation_at "$BASE" "openclaw"
+    FOUND_INSTALLATION="openclaw"
+  fi
+
+  # 检查 moltbot
+  if [ -d "$BASE/.moltbot" ]; then
+    cleanup_installation_at "$BASE" "moltbot"
+    FOUND_INSTALLATION="moltbot"
+  fi
+done
 
 # 如果都没找到
 if [ -z "$FOUND_INSTALLATION" ]; then

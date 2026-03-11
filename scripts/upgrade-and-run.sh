@@ -149,7 +149,7 @@ fi
 
 # 2. 移除老版本
 echo ""
-echo "[2/6] 移除老版本..."
+echo "[2/8] 移除老版本..."
 if [ -f "$PROJ_DIR/scripts/upgrade.sh" ]; then
     bash "$PROJ_DIR/scripts/upgrade.sh"
 else
