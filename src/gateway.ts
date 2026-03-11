@@ -413,6 +413,17 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
   let handleMessageFnRef: ((msg: QueuedMessage) => Promise<void>) | null = null;
   let totalEnqueued = 0; // 全局已入队总数（用于溢出保护）
 
+  // ============ Stop 命令：队列清空 + dispatch 中断 ============
+  // 当收到 /stop、/reset、/new 等命令时，清空该 peerId 队列中排在前面的消息，
+  // 并中断当前正在进行的 dispatch，让 stop 命令能立即被处理。
+  const STOP_COMMANDS = new Set(["/stop", "/reset", "/new"]);
+  const isStopCommand = (content: string): boolean => {
+    const trimmed = content.trim().toLowerCase();
+    return STOP_COMMANDS.has(trimmed);
+  };
+  // 每个 peerId 维护一个 AbortController，用于中断当前正在进行的 dispatch
+  const peerAbortControllers = new Map<string, AbortController>();
+
   // 获取消息的路由 key（决定并发隔离粒度）
   const getMessagePeerId = (msg: QueuedMessage): string => {
     if (msg.type === "guild") return `guild:${msg.channelId ?? "unknown"}`;
@@ -426,6 +437,22 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
     if (!queue) {
       queue = [];
       userQueues.set(peerId, queue);
+    }
+
+    // ============ Stop 命令插队：清空排队中的消息 + 中断当前 dispatch ============
+    if (isStopCommand(msg.content)) {
+      const droppedCount = queue.length;
+      if (droppedCount > 0) {
+        totalEnqueued = Math.max(0, totalEnqueued - droppedCount);
+        queue.length = 0; // 清空队列中所有排队的消息
+        log?.info(`[qqbot:${account.accountId}] Stop command received for ${peerId}, dropped ${droppedCount} queued message(s)`);
+      }
+      // 中断当前正在进行的 dispatch（如果有的话）
+      const currentAbort = peerAbortControllers.get(peerId);
+      if (currentAbort) {
+        currentAbort.abort();
+        log?.info(`[qqbot:${account.accountId}] Stop command: aborted current dispatch for ${peerId}`);
+      }
     }
 
     // 单用户队列溢出保护
@@ -467,13 +494,26 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
       while (queue.length > 0 && !isAborted) {
         const msg = queue.shift()!;
         totalEnqueued = Math.max(0, totalEnqueued - 1);
+        // 为每条消息创建独立的 AbortController，供 stop 命令中断
+        const msgAbort = new AbortController();
+        peerAbortControllers.set(peerId, msgAbort);
         try {
           if (handleMessageFnRef) {
             await handleMessageFnRef(msg);
             messagesProcessed++;
           }
         } catch (err) {
-          log?.error(`[qqbot:${account.accountId}] Message processor error for ${peerId}: ${err}`);
+          // 如果是被 stop 命令中断的，跳过错误日志
+          if (msgAbort.signal.aborted) {
+            log?.info(`[qqbot:${account.accountId}] Message processing aborted by stop command for ${peerId}, skipping to next`);
+          } else {
+            log?.error(`[qqbot:${account.accountId}] Message processor error for ${peerId}: ${err}`);
+          }
+        } finally {
+          // 只清理自己创建的 controller（可能已经被新消息替换）
+          if (peerAbortControllers.get(peerId) === msgAbort) {
+            peerAbortControllers.delete(peerId);
+          }
         }
       }
     } finally {
@@ -595,6 +635,12 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
         if (event.attachments?.length) {
           log?.info(`[qqbot:${account.accountId}] Attachments: ${event.attachments.length}`);
         }
+
+        // 获取队列 peerId（与 getMessagePeerId 逻辑一致），用于查找 stop 中断信号
+        const queuePeerId = event.type === "guild" ? `guild:${event.channelId ?? "unknown"}`
+                          : event.type === "group" ? `group:${event.groupOpenid ?? "unknown"}`
+                          : `dm:${event.senderId}`;
+        const currentMsgAbort = peerAbortControllers.get(queuePeerId);
 
         pluginRuntime.channel.activity.record({
           channel: "qqbot",
@@ -1112,6 +1158,12 @@ ${ttsHint}${sttHint}${asrFallbackHint}${voiceForwardHint}`;
             dispatcherOptions: {
               responsePrefix: messagesConfig.responsePrefix,
               deliver: async (payload: { text?: string; mediaUrls?: string[]; mediaUrl?: string }, info: { kind: string }) => {
+                // 如果已被 stop 命令中断，跳过所有后续 deliver
+                if (currentMsgAbort?.signal.aborted) {
+                  log?.info(`[qqbot:${account.accountId}] deliver skipped (aborted by stop command), kind: ${info.kind}`);
+                  return;
+                }
+
                 hasResponse = true;
 
                 log?.info(`[qqbot:${account.accountId}] deliver called, kind: ${info.kind}, payload keys: ${Object.keys(payload).join(", ")}`);
@@ -2168,14 +2220,34 @@ ${ttsHint}${sttHint}${asrFallbackHint}${voiceForwardHint}`;
             },
           });
 
-          // 等待分发完成或超时
+          // 构建 stop 命令中断 promise：当 stop 命令触发 abort 时立即 reject
+          const stopAbortPromise = currentMsgAbort
+            ? new Promise<void>((_, reject) => {
+                if (currentMsgAbort.signal.aborted) {
+                  reject(new Error("Aborted by stop command"));
+                  return;
+                }
+                currentMsgAbort.signal.addEventListener("abort", () => {
+                  reject(new Error("Aborted by stop command"));
+                }, { once: true });
+              })
+            : null;
+
+          // 等待分发完成、超时、或被 stop 命令中断
+          const racers: Promise<void>[] = [dispatchPromise, timeoutPromise];
+          if (stopAbortPromise) racers.push(stopAbortPromise);
+
           try {
-            await Promise.race([dispatchPromise, timeoutPromise]);
+            await Promise.race(racers);
           } catch (err) {
             if (timeoutId) {
               clearTimeout(timeoutId);
             }
-            if (!hasResponse) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            if (errMsg.includes("Aborted by stop command")) {
+              log?.info(`[qqbot:${account.accountId}] Dispatch aborted by stop command, skipping remaining response`);
+              // 被 stop 中断，不再发送任何兜底消息
+            } else if (!hasResponse) {
               log?.error(`[qqbot:${account.accountId}] No response within timeout`);
               // 超时不再主动发消息给用户，仅记录日志
             }
@@ -2186,7 +2258,9 @@ ${ttsHint}${sttHint}${asrFallbackHint}${voiceForwardHint}`;
               toolOnlyTimeoutId = null;
             }
             // dispatch 完成后，如果只有 tool 没有 block，且尚未发过兜底，立即兜底
-            if (toolDeliverCount > 0 && !hasBlockResponse && !toolFallbackSent) {
+            // （但如果被 stop 中断则跳过）
+            const wasAborted = currentMsgAbort?.signal.aborted;
+            if (!wasAborted && toolDeliverCount > 0 && !hasBlockResponse && !toolFallbackSent) {
               toolFallbackSent = true;
               log?.error(`[qqbot:${account.accountId}] Dispatch completed with ${toolDeliverCount} tool deliver(s) but no block deliver, sending fallback`);
               const fallback = formatToolFallback();
