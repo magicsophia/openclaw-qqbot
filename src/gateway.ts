@@ -2177,7 +2177,7 @@ ${ttsHint}${sttHint}${asrFallbackHint}${voiceForwardHint}`;
             }
             if (!hasResponse) {
               log?.error(`[qqbot:${account.accountId}] No response within timeout`);
-              await sendErrorMessage("⏳ 已收到，正在处理中…");
+              // 超时不再主动发消息给用户，仅记录日志
             }
           } finally {
             // 清理 tool-only 兜底定时器
