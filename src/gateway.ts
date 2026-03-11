@@ -2236,6 +2236,11 @@ ${ttsHint}${sttHint}${asrFallbackHint}${voiceForwardHint}`;
 
           log?.debug?.(`[qqbot:${account.accountId}] Received op=${op} t=${t}`);
 
+          // 收到 Dispatch 事件时，立即打印完整消息内容便于排查
+          if (op === 0 && t) {
+            log?.info(`[qqbot:${account.accountId}] Dispatch event t=${t} payload: ${rawData}`);
+          }
+
           switch (op) {
             case 10: // Hello
               log?.info(`[qqbot:${account.accountId}] Hello received`);
