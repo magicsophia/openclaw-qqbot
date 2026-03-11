@@ -23,6 +23,10 @@ export interface ResolvedQQBotAccount {
   imageServerBaseUrl?: string;
   /** 是否支持 markdown 消息（默认 true） */
   markdownSupport: boolean;
+  /** 自定义 API 域名 */
+  apiBase?: string;
+  /** 自定义 Token 获取地址 */
+  tokenUrl?: string;
   config: QQBotAccountConfig;
 }
 
@@ -43,6 +47,10 @@ export interface QQBotAccountConfig {
   imageServerBaseUrl?: string;
   /** 是否支持 markdown 消息（默认 true，设为 false 可禁用） */
   markdownSupport?: boolean;
+  /** 自定义 API 域名（默认 https://api.sgroup.qq.com），用于连接私有化部署的开平服务 */
+  apiBase?: string;
+  /** 自定义 Token 获取地址（默认 https://bots.qq.com/app/getAppAccessToken），用于连接私有化部署的开平服务 */
+  tokenUrl?: string;
   /**
    * @deprecated 请使用 audioFormatPolicy.uploadDirectFormats
    * 可直接上传的音频格式（不转换为 SILK），向后兼容

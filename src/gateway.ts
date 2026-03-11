@@ -348,11 +348,13 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
     }
   }
 
-  // 初始化 API 配置（markdown 支持）
+  // 初始化 API 配置（markdown 支持 + 自定义域名）
   initApiConfig({
     markdownSupport: account.markdownSupport,
+    apiBase: account.apiBase,
+    tokenUrl: account.tokenUrl,
   });
-  log?.info(`[qqbot:${account.accountId}] API config: markdownSupport=${account.markdownSupport === true}`);
+  log?.info(`[qqbot:${account.accountId}] API config: markdownSupport=${account.markdownSupport === true}${account.apiBase ? `, apiBase=${account.apiBase}` : ""}${account.tokenUrl ? `, tokenUrl=${account.tokenUrl}` : ""}`);
 
   // TTS 配置验证
   const ttsCfg = resolveTTSConfig(cfg as Record<string, unknown>);

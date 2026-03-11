@@ -6,18 +6,42 @@
 import { computeFileHash, getCachedFileInfo, setCachedFileInfo } from "./utils/upload-cache.js";
 import { sanitizeFileName } from "./utils/platform.js";
 
-const API_BASE = "https://api.sgroup.qq.com";
-const TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";
+const DEFAULT_API_BASE = "https://api.sgroup.qq.com";
+const DEFAULT_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";
 
 // 运行时配置
 let currentMarkdownSupport = false;
+let currentApiBase = DEFAULT_API_BASE;
+let currentTokenUrl = DEFAULT_TOKEN_URL;
 
 /**
  * 初始化 API 配置
  * @param options.markdownSupport - 是否支持 markdown 消息（默认 false，需要机器人具备该权限才能启用）
+ * @param options.apiBase - 自定义 API 域名（默认 https://api.sgroup.qq.com）
+ * @param options.tokenUrl - 自定义 Token 获取地址（默认 https://bots.qq.com/app/getAppAccessToken）
  */
-export function initApiConfig(options: { markdownSupport?: boolean }): void {
+export function initApiConfig(options: { markdownSupport?: boolean; apiBase?: string; tokenUrl?: string }): void {
   currentMarkdownSupport = options.markdownSupport === true;
+  if (options.apiBase) {
+    currentApiBase = options.apiBase.replace(/\/+$/, "");
+  }
+  if (options.tokenUrl) {
+    currentTokenUrl = options.tokenUrl;
+  }
+}
+
+/**
+ * 获取当前 API Base URL
+ */
+export function getApiBase(): string {
+  return currentApiBase;
+}
+
+/**
+ * 获取当前 Token URL
+ */
+export function getTokenUrl(): string {
+  return currentTokenUrl;
 }
 
 /**
@@ -79,11 +103,11 @@ async function doFetchToken(appId: string, clientSecret: string): Promise<string
   const requestHeaders = { "Content-Type": "application/json" };
   
   // 打印请求信息（隐藏敏感信息）
-  console.log(`[qqbot-api:${appId}] >>> POST ${TOKEN_URL}`);
+  console.log(`[qqbot-api:${appId}] >>> POST ${currentTokenUrl}`);
 
   let response: Response;
   try {
-    response = await fetch(TOKEN_URL, {
+    response = await fetch(currentTokenUrl, {
       method: "POST",
       headers: requestHeaders,
       body: JSON.stringify(requestBody),
@@ -183,7 +207,7 @@ export async function apiRequest<T = unknown>(
   body?: unknown,
   timeoutMs?: number
 ): Promise<T> {
-  const url = `${API_BASE}${path}`;
+  const url = `${currentApiBase}${path}`;
   const headers: Record<string, string> = {
     Authorization: `QQBot ${accessToken}`,
     "Content-Type": "application/json",

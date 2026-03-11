@@ -25,6 +25,8 @@ cd "$PROJ_DIR"
 APPID=""
 SECRET=""
 MARKDOWN=""
+API_BASE_URL=""
+TOKEN_URL_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -40,6 +42,14 @@ while [[ $# -gt 0 ]]; do
             MARKDOWN="$2"
             shift 2
             ;;
+        --api-base)
+            API_BASE_URL="$2"
+            shift 2
+            ;;
+        --token-url)
+            TOKEN_URL_OVERRIDE="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "用法: $0 [选项]"
             echo ""
@@ -47,6 +57,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --appid <appid>       QQ机器人 AppID"
             echo "  --secret <secret>     QQ机器人 Secret"
             echo "  --markdown <yes|no>   是否启用 Markdown 消息格式（默认: no）"
+            echo "  --api-base <url>      自定义 API 域名（默认: https://api.sgroup.qq.com）"
+            echo "  --token-url <url>     自定义 Token 获取地址（默认: https://bots.qq.com/app/getAppAccessToken）"
             echo "  -h, --help            显示帮助信息"
             echo ""
             echo "也可以通过环境变量设置:"
@@ -54,6 +66,8 @@ while [[ $# -gt 0 ]]; do
             echo "  QQBOT_SECRET          QQ机器人 Secret"
             echo "  QQBOT_TOKEN           QQ机器人 Token (AppID:Secret)"
             echo "  QQBOT_MARKDOWN        是否启用 Markdown（yes/no）"
+            echo "  QQBOT_API_BASE        自定义 API 域名"
+            echo "  QQBOT_TOKEN_URL       自定义 Token 获取地址"
             echo ""
             echo "不带参数时，将使用已有配置直接启动。"
             echo ""
@@ -72,6 +86,8 @@ done
 APPID="${APPID:-$QQBOT_APPID}"
 SECRET="${SECRET:-$QQBOT_SECRET}"
 MARKDOWN="${MARKDOWN:-$QQBOT_MARKDOWN}"
+API_BASE_URL="${API_BASE_URL:-$QQBOT_API_BASE}"
+TOKEN_URL_OVERRIDE="${TOKEN_URL_OVERRIDE:-$QQBOT_TOKEN_URL}"
 
 echo "========================================="
 echo "  QQBot 一键更新启动脚本"
@@ -79,7 +95,7 @@ echo "========================================="
 
 # 1. 备份已有 qqbot 通道配置，防止升级过程丢失
 echo ""
-echo "[1/6] 备份已有配置..."
+echo "[1/8] 备份已有配置..."
 SAVED_QQBOT_TOKEN=""
 for APP_NAME in openclaw clawdbot moltbot; do
     CONFIG_FILE="$HOME/.$APP_NAME/$APP_NAME.json"
@@ -142,7 +158,7 @@ fi
 
 # 3. 安装当前版本
 echo ""
-echo "[3/6] 安装当前版本..."
+echo "[3/8] 安装当前版本..."
 
 echo "检查当前目录: $(pwd)"
 echo "检查openclaw版本: $(openclaw --version 2>/dev/null || echo 'openclaw not found')"
@@ -394,9 +410,117 @@ else
     echo "未指定 Markdown 选项，使用已有配置"
 fi
 
-# 6. 启动 openclaw
+# 6. 配置 API Base URL（仅在明确指定时才配置）
 echo ""
-echo "[6/6] 启动 openclaw..."
+echo "[6/8] 配置 API Base URL..."
+
+if [ -n "$API_BASE_URL" ]; then
+    echo "设置 API Base URL: $API_BASE_URL"
+
+    CURRENT_API_BASE=$(node -e "
+      const fs = require('fs');
+      const path = require('path');
+      const home = process.env.HOME;
+      for (const app of ['openclaw', 'clawdbot', 'moltbot']) {
+        const f = path.join(home, '.' + app, app + '.json');
+        if (!fs.existsSync(f)) continue;
+        try {
+          const cfg = JSON.parse(fs.readFileSync(f, 'utf8'));
+          const keys = ['qqbot', 'openclaw-qqbot', 'openclaw-qq'];
+          for (const key of keys) {
+            const ch = cfg.channels && cfg.channels[key];
+            if (!ch) continue;
+            if (ch.apiBase) { process.stdout.write(ch.apiBase); process.exit(0); }
+          }
+        } catch {}
+      }
+    " 2>/dev/null || true)
+
+    if [ "$CURRENT_API_BASE" = "$API_BASE_URL" ]; then
+        echo "✅ API Base URL 配置已是目标值，跳过写入"
+    elif openclaw config set channels.qqbot.apiBase "$API_BASE_URL" 2>&1; then
+        echo "✅ API Base URL 配置成功"
+        _config_changed=1
+    else
+        echo "⚠️  openclaw config set 失败，尝试直接编辑配置文件..."
+        OPENCLAW_CONFIG="$HOME/.openclaw/openclaw.json"
+        if [ -f "$OPENCLAW_CONFIG" ] && node -e "
+          const fs = require('fs');
+          const cfg = JSON.parse(fs.readFileSync('$OPENCLAW_CONFIG', 'utf-8'));
+          if (!cfg.channels) cfg.channels = {};
+          if (!cfg.channels.qqbot) cfg.channels.qqbot = {};
+          const target = '$API_BASE_URL';
+          if (cfg.channels.qqbot.apiBase === target) process.exit(0);
+          cfg.channels.qqbot.apiBase = target;
+          fs.writeFileSync('$OPENCLAW_CONFIG', JSON.stringify(cfg, null, 4) + '\n');
+        " 2>&1; then
+            echo "✅ API Base URL 配置成功（直接编辑配置文件）"
+            _config_changed=1
+        else
+            echo "⚠️  API Base URL 配置设置失败，不影响后续运行"
+        fi
+    fi
+else
+    echo "未指定 API Base URL，使用已有配置（默认: https://api.sgroup.qq.com）"
+fi
+
+# 7. 配置 Token URL（仅在明确指定时才配置）
+echo ""
+echo "[7/8] 配置 Token URL..."
+
+if [ -n "$TOKEN_URL_OVERRIDE" ]; then
+    echo "设置 Token URL: $TOKEN_URL_OVERRIDE"
+
+    CURRENT_TOKEN_URL=$(node -e "
+      const fs = require('fs');
+      const path = require('path');
+      const home = process.env.HOME;
+      for (const app of ['openclaw', 'clawdbot', 'moltbot']) {
+        const f = path.join(home, '.' + app, app + '.json');
+        if (!fs.existsSync(f)) continue;
+        try {
+          const cfg = JSON.parse(fs.readFileSync(f, 'utf8'));
+          const keys = ['qqbot', 'openclaw-qqbot', 'openclaw-qq'];
+          for (const key of keys) {
+            const ch = cfg.channels && cfg.channels[key];
+            if (!ch) continue;
+            if (ch.tokenUrl) { process.stdout.write(ch.tokenUrl); process.exit(0); }
+          }
+        } catch {}
+      }
+    " 2>/dev/null || true)
+
+    if [ "$CURRENT_TOKEN_URL" = "$TOKEN_URL_OVERRIDE" ]; then
+        echo "✅ Token URL 配置已是目标值，跳过写入"
+    elif openclaw config set channels.qqbot.tokenUrl "$TOKEN_URL_OVERRIDE" 2>&1; then
+        echo "✅ Token URL 配置成功"
+        _config_changed=1
+    else
+        echo "⚠️  openclaw config set 失败，尝试直接编辑配置文件..."
+        OPENCLAW_CONFIG="$HOME/.openclaw/openclaw.json"
+        if [ -f "$OPENCLAW_CONFIG" ] && node -e "
+          const fs = require('fs');
+          const cfg = JSON.parse(fs.readFileSync('$OPENCLAW_CONFIG', 'utf-8'));
+          if (!cfg.channels) cfg.channels = {};
+          if (!cfg.channels.qqbot) cfg.channels.qqbot = {};
+          const target = '$TOKEN_URL_OVERRIDE';
+          if (cfg.channels.qqbot.tokenUrl === target) process.exit(0);
+          cfg.channels.qqbot.tokenUrl = target;
+          fs.writeFileSync('$OPENCLAW_CONFIG', JSON.stringify(cfg, null, 4) + '\n');
+        " 2>&1; then
+            echo "✅ Token URL 配置成功（直接编辑配置文件）"
+            _config_changed=1
+        else
+            echo "⚠️  Token URL 配置设置失败，不影响后续运行"
+        fi
+    fi
+else
+    echo "未指定 Token URL，使用已有配置（默认: https://bots.qq.com/app/getAppAccessToken）"
+fi
+
+# 8. 启动 openclaw
+echo ""
+echo "[8/8] 启动 openclaw..."
 echo "========================================="
 
 # 检查openclaw是否可用
