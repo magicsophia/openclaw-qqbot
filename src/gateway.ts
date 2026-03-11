@@ -1164,6 +1164,16 @@ ${ttsHint}${sttHint}${asrFallbackHint}${voiceForwardHint}`;
                   return;
                 }
 
+                // 静默命令：/new、/reset 等会话管理命令的回复不发送给用户
+                // （openclaw 框架内部的 session 操作照常执行，只是吞掉自动生成的开场白/自我介绍）
+                const SILENT_COMMANDS = new Set(["/new", "/reset"]);
+                const rawContent = (event.content ?? "").trim().toLowerCase();
+                if (SILENT_COMMANDS.has(rawContent)) {
+                  log?.info(`[qqbot:${account.accountId}] deliver silenced for command "${rawContent}", kind: ${info.kind}`);
+                  hasResponse = true; // 标记为已响应，避免触发超时兜底
+                  return;
+                }
+
                 hasResponse = true;
 
                 log?.info(`[qqbot:${account.accountId}] deliver called, kind: ${info.kind}, payload keys: ${Object.keys(payload).join(", ")}`);
