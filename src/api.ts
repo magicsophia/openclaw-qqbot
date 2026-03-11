@@ -401,7 +401,8 @@ export async function sendGroupMessage(
   msgId?: string
 ): Promise<MessageResponse> {
   const msgSeq = msgId ? getNextMsgSeq(msgId) : 1;
-  const body = buildMessageBody(content, msgId, msgSeq);
+  // 群消息不传 msg_id，避免显示为引用回复
+  const body = buildMessageBody(content, undefined, msgSeq);
   return apiRequest(accessToken, "POST", `/v2/groups/${groupOpenid}/messages`, body);
 }
 
@@ -545,12 +546,12 @@ export async function sendGroupMediaMessage(
   content?: string
 ): Promise<{ id: string; timestamp: string }> {
   const msgSeq = msgId ? getNextMsgSeq(msgId) : 1;
+  // 群消息不传 msg_id，避免显示为引用回复
   return apiRequest(accessToken, "POST", `/v2/groups/${groupOpenid}/messages`, {
     msg_type: 7,
     media: { file_info: fileInfo },
     msg_seq: msgSeq,
     ...(content ? { content } : {}),
-    ...(msgId ? { msg_id: msgId } : {}),
   });
 }
 
