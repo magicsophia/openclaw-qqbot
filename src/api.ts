@@ -231,13 +231,14 @@ export async function apiRequest<T = unknown>(
     options.body = JSON.stringify(body);
   }
 
-  // 打印请求信息
+  // 打印请求信息及完整 body（便于排查）
   console.log(`[qqbot-api] >>> ${method} ${url} (timeout: ${timeout}ms)`);
   if (body) {
     const logBody = { ...body } as Record<string, unknown>;
     if (typeof logBody.file_data === "string") {
       logBody.file_data = `<base64 ${(logBody.file_data as string).length} chars>`;
     }
+    console.log(`[qqbot-api] >>> Body: ${JSON.stringify(logBody)}`);
   }
 
   let res: Response;
@@ -265,6 +266,7 @@ export async function apiRequest<T = unknown>(
   let rawBody: string;
   try {
     rawBody = await res.text();
+    console.log(`[qqbot-api] <<< Body: ${rawBody}`);
     data = JSON.parse(rawBody) as T;
   } catch (err) {
     throw new Error(`Failed to parse response[${path}]: ${err instanceof Error ? err.message : String(err)}`);
