@@ -648,28 +648,30 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
           direction: "inbound",
         });
 
-        // 发送输入状态提示（非关键，失败不影响主流程）
-        try {
-          let token = await getAccessToken(account.appId, account.clientSecret);
-          try {
-            await sendC2CInputNotify(token, event.senderId, event.messageId, 60);
-          } catch (notifyErr) {
-            const errMsg = String(notifyErr);
-            if (errMsg.includes("token") || errMsg.includes("401") || errMsg.includes("11244")) {
-              log?.info(`[qqbot:${account.accountId}] InputNotify token expired, refreshing...`);
-              clearTokenCache(account.appId);
-              token = await getAccessToken(account.appId, account.clientSecret);
-              await sendC2CInputNotify(token, event.senderId, event.messageId, 60);
-            } else {
-              throw notifyErr;
-            }
-          }
-          log?.info(`[qqbot:${account.accountId}] Sent input notify to ${event.senderId}`);
-        } catch (err) {
-          log?.error(`[qqbot:${account.accountId}] sendC2CInputNotify error: ${err}`);
-        }
-
         const isGroupChat = event.type === "guild" || event.type === "group";
+
+        // 发送输入状态提示（仅 C2C 私聊场景，群聊不支持）
+        if (!isGroupChat) {
+          try {
+            let token = await getAccessToken(account.appId, account.clientSecret);
+            try {
+              await sendC2CInputNotify(token, event.senderId, event.messageId, 60);
+            } catch (notifyErr) {
+              const errMsg = String(notifyErr);
+              if (errMsg.includes("token") || errMsg.includes("401") || errMsg.includes("11244")) {
+                log?.info(`[qqbot:${account.accountId}] InputNotify token expired, refreshing...`);
+                clearTokenCache(account.appId);
+                token = await getAccessToken(account.appId, account.clientSecret);
+                await sendC2CInputNotify(token, event.senderId, event.messageId, 60);
+              } else {
+                throw notifyErr;
+              }
+            }
+            log?.info(`[qqbot:${account.accountId}] Sent input notify to ${event.senderId}`);
+          } catch (err) {
+            log?.error(`[qqbot:${account.accountId}] sendC2CInputNotify error: ${err}`);
+          }
+        }
         // peerId 只放纯 ID，类型信息由 peer.kind 表达
         // 群聊：用 groupOpenid（框架根据 kind:"group" 区分）
         // 私聊：用 senderId（框架根据 dmScope 决定隔离粒度）
