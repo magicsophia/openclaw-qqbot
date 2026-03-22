@@ -123,15 +123,24 @@ export async function parseAndSendMediaTags(
       await sendTextChunks(item.content, event, actx, sendWithRetry, consumeQuoteRef);
     } else if (item.type === "image") {
       const result = await sendPhoto(mediaTarget, item.content);
-      if (result.error) log?.error(`${prefix} sendPhoto error: ${result.error}`);
+      if (result.error) {
+        log?.error(`${prefix} sendPhoto error: ${result.error}`);
+        await sendTextChunks(`发送图片失败：${result.error}`, event, actx, sendWithRetry, consumeQuoteRef);
+      }
     } else if (item.type === "voice") {
       await sendVoiceWithTimeout(mediaTarget, item.content, account, log, prefix);
     } else if (item.type === "video") {
       const result = await sendVideoMsg(mediaTarget, item.content);
-      if (result.error) log?.error(`${prefix} sendVideoMsg error: ${result.error}`);
+      if (result.error) {
+        log?.error(`${prefix} sendVideoMsg error: ${result.error}`);
+        await sendTextChunks(`发送视频失败：${result.error}`, event, actx, sendWithRetry, consumeQuoteRef);
+      }
     } else if (item.type === "file") {
       const result = await sendDocument(mediaTarget, item.content);
-      if (result.error) log?.error(`${prefix} sendDocument error: ${result.error}`);
+      if (result.error) {
+        log?.error(`${prefix} sendDocument error: ${result.error}`);
+        await sendTextChunks(result.error, event, actx, sendWithRetry, consumeQuoteRef);
+      }
     } else if (item.type === "media") {
       const result = await sendMediaAuto({
         to: actx.qualifiedTarget,
@@ -141,7 +150,10 @@ export async function parseAndSendMediaTags(
         replyToId: event.messageId,
         account,
       });
-      if (result.error) log?.error(`${prefix} sendMedia(auto) error: ${result.error}`);
+      if (result.error) {
+        log?.error(`${prefix} sendMedia(auto) error: ${result.error}`);
+        await sendTextChunks(result.error, event, actx, sendWithRetry, consumeQuoteRef);
+      }
     }
   }
 
@@ -250,8 +262,12 @@ export async function sendPlainReply(
           to: qualifiedTarget, text: "", mediaUrl: mediaPath,
           accountId: account.accountId, replyToId: event.messageId, account,
         });
-        if (result.error) log?.error(`${prefix} sendMedia(auto) error for ${mediaPath}: ${result.error}`);
-        else log?.info(`${prefix} Sent local media: ${mediaPath}`);
+        if (result.error) {
+          log?.error(`${prefix} sendMedia(auto) error for ${mediaPath}: ${result.error}`);
+          await sendTextChunks(result.error, event, actx, sendWithRetry, consumeQuoteRef);
+        } else {
+          log?.info(`${prefix} Sent local media: ${mediaPath}`);
+        }
       } catch (err) {
         log?.error(`${prefix} sendMedia(auto) failed for ${mediaPath}: ${err}`);
       }
@@ -267,8 +283,12 @@ export async function sendPlainReply(
           to: qualifiedTarget, text: "", mediaUrl,
           accountId: account.accountId, replyToId: event.messageId, account,
         });
-        if (result.error) log?.error(`${prefix} Tool media forward error: ${result.error}`);
-        else log?.info(`${prefix} Forwarded tool media: ${mediaUrl.slice(0, 80)}...`);
+        if (result.error) {
+          log?.error(`${prefix} Tool media forward error: ${result.error}`);
+          await sendTextChunks(result.error, event, actx, sendWithRetry, consumeQuoteRef);
+        } else {
+          log?.info(`${prefix} Forwarded tool media: ${mediaUrl.slice(0, 80)}...`);
+        }
       } catch (err) {
         log?.error(`${prefix} Tool media forward failed: ${err}`);
       }

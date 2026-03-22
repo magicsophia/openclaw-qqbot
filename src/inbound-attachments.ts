@@ -45,7 +45,9 @@ export interface ProcessedAttachments {
 }
 
 interface ProcessContext {
-  accountId: string;
+  appId: string;
+  /** 对话 ID：群聊传 groupOpenid，私聊传 senderId（用于按群/用户隔离下载目录） */
+  peerId?: string;
   cfg: unknown;
   log?: {
     info: (msg: string) => void;
@@ -84,9 +86,10 @@ export async function processAttachments(
 ): Promise<ProcessedAttachments> {
   if (!attachments?.length) return EMPTY_RESULT;
 
-  const { accountId, cfg, log } = ctx;
-  const downloadDir = getQQBotMediaDir("downloads");
-  const prefix = `[qqbot:${accountId}]`;
+  const { appId, peerId, cfg, log } = ctx;
+  const subPaths = ["downloads", appId, ...(peerId ? [peerId] : [])];
+  const downloadDir = getQQBotMediaDir(...subPaths);
+  const prefix = `[qqbot:${appId}]`;
 
   // 结果收集
   const imageUrls: string[] = [];
@@ -111,18 +114,19 @@ export async function processAttachments(
     let audioPath: string | null = null;
 
     if (isVoice && wavUrl) {
-      const wavLocalPath = await downloadFile(wavUrl, downloadDir);
-      if (wavLocalPath) {
-        localPath = wavLocalPath;
-        audioPath = wavLocalPath;
+      const wavResult = await downloadFile(wavUrl, undefined, { destDir: downloadDir });
+      if (wavResult.filePath) {
+        localPath = wavResult.filePath;
+        audioPath = wavResult.filePath;
         log?.info(`${prefix} Voice attachment: ${att.filename}, downloaded WAV directly (skip SILK→WAV)`);
       } else {
-        log?.error(`${prefix} Failed to download voice_wav_url, falling back to original URL`);
+        log?.error(`${prefix} Failed to download voice_wav_url (${wavResult.error}), falling back to original URL`);
       }
     }
 
     if (!localPath) {
-      localPath = await downloadFile(attUrl, downloadDir, att.filename);
+      const dlResult = await downloadFile(attUrl, att.filename, { destDir: downloadDir });
+      localPath = dlResult.filePath;
     }
 
     return { att, attUrl, isVoice, localPath, audioPath };

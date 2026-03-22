@@ -25,6 +25,8 @@ cd "$PROJ_DIR"
 APPID=""
 SECRET=""
 MARKDOWN=""
+API_BASE=""
+TOKEN_URL=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -40,6 +42,14 @@ while [[ $# -gt 0 ]]; do
             MARKDOWN="$2"
             shift 2
             ;;
+        --api-base)
+            API_BASE="$2"
+            shift 2
+            ;;
+        --token-url)
+            TOKEN_URL="$2"
+            shift 2
+            ;;
         -h|--help)
             echo "用法: $0 [选项]"
             echo ""
@@ -47,6 +57,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --appid <appid>       QQ机器人 appid"
             echo "  --secret <secret>     QQ机器人 secret"
             echo "  --markdown <yes|no>   是否启用 markdown 消息格式（默认: no）"
+            echo "  --api-base <url>      QQ机器人 API 地址（默认: https://api.sgroup.qq.com）"
+            echo "  --token-url <url>     QQ机器人 Token 获取地址（默认: https://bots.qq.com/app/getAppAccessToken）"
             echo "  -h, --help            显示帮助信息"
             echo ""
             echo "也可以通过环境变量设置:"
@@ -524,6 +536,41 @@ if [ -n "$DESIRED_QQBOT_TOKEN" ]; then
         # channels 配置变更在 reload plan 中匹配为 hot reload（非 restart），
         # 由 channel 插件热重载处理，通常 <1 秒完成，无需长时间等待。
         sleep 1
+    fi
+
+    # 写入 apiBase / tokenUrl（如果通过命令行或环境变量指定了）
+    if [ -n "$API_BASE" ] || [ -n "$TOKEN_URL" ]; then
+        echo "配置 API 地址..."
+        for _app in openclaw clawdbot moltbot; do
+            _cfg="$HOME/.$_app/$_app.json"
+            if [ -f "$_cfg" ]; then
+                node -e "
+                    const fs = require('fs');
+                    const cfg = JSON.parse(fs.readFileSync('$_cfg', 'utf8'));
+                    if (!cfg.channels) cfg.channels = {};
+                    if (!cfg.channels.qqbot) cfg.channels.qqbot = {};
+                    let changed = false;
+                    const apiBase = '$API_BASE';
+                    const tokenUrl = '$TOKEN_URL';
+                    if (apiBase && cfg.channels.qqbot.apiBase !== apiBase) {
+                        cfg.channels.qqbot.apiBase = apiBase;
+                        changed = true;
+                    }
+                    if (tokenUrl && cfg.channels.qqbot.tokenUrl !== tokenUrl) {
+                        cfg.channels.qqbot.tokenUrl = tokenUrl;
+                        changed = true;
+                    }
+                    if (changed) {
+                        fs.writeFileSync('$_cfg', JSON.stringify(cfg, null, 4) + '\n');
+                        if (apiBase) console.log('  apiBase = ' + apiBase);
+                        if (tokenUrl) console.log('  tokenUrl = ' + tokenUrl);
+                    } else {
+                        console.log('  API 地址配置已是目标值，跳过写入');
+                    }
+                " 2>/dev/null && echo "✅ API 地址配置成功" || echo "⚠️  API 地址配置写入失败"
+                break
+            fi
+        done
     fi
 else
     # 未提供任何可用 token 时，检查是否已有可用配置

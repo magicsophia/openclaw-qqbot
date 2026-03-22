@@ -115,6 +115,8 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
   // 初始化 API 配置（markdown 支持）
   initApiConfig({
     markdownSupport: account.markdownSupport,
+    apiBase: account.apiBase,
+    tokenUrl: account.tokenUrl,
   });
   log?.info(`[qqbot:${account.accountId}] API config: markdownSupport=${account.markdownSupport === true}`);
 
@@ -501,7 +503,7 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
         }
         
         // 处理附件（图片等）- 下载到本地供 openclaw 访问
-        const processed = await processAttachments(event.attachments, { accountId: account.accountId, cfg, log });
+        const processed = await processAttachments(event.attachments, { appId: account.appId, peerId, cfg, log });
         const { attachmentInfo, imageUrls, imageMediaTypes, voiceAttachmentPaths, voiceAttachmentUrls, voiceAsrReferTexts, voiceTranscripts, voiceTranscriptSources, attachmentLocalPaths } = processed;
         
         // 语音转录文本注入到用户消息中
